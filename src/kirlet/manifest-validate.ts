@@ -472,10 +472,35 @@ function parse_public_block(
           });
           return;
         }
-        result.pages!.push({
+        const page: NonNullable<KirletManifestPublic["pages"]>[number] = {
           id,
           access: access as KirletPublicAccess,
-        });
+        };
+        // El segmento acaba en la URL del sitio público: solo minúsculas,
+        // dígitos y guiones. Vacío es legítimo — es el inicio del escaparate.
+        const segment = entry["segment"];
+        if (segment !== undefined) {
+          if (typeof segment !== "string" || !/^[a-z0-9-]*$/.test(segment)) {
+            issues.push({
+              path: `${p}.segment`,
+              message: "segment must be lowercase letters, digits or hyphens",
+            });
+            return;
+          }
+          page.segment = segment;
+        }
+        const label = entry["label"];
+        if (label !== undefined) {
+          if (!is_nonempty_string(label)) {
+            issues.push({
+              path: `${p}.label`,
+              message: "label must be a non-empty string",
+            });
+            return;
+          }
+          page.label = label;
+        }
+        result.pages!.push(page);
       });
     }
   }
@@ -580,7 +605,7 @@ function parse_public_block(
         }
         // A kirlet may only publish resources it owns. Without this a manifest
         // could name another kirlet's namespace and expose its attachments.
-        const namespace = `kirlet.${technical_id.replace(/^kirlet-/, "")}.`;
+        const namespace = `kirlet.${technical_id.replace(/^(?:kirlet|subject)-/, "")}.`;
         if (
           !resourcePrefix.startsWith(namespace) ||
           resourcePrefix.length === namespace.length
@@ -697,11 +722,12 @@ function validate_widgets(
     if (
       is_nonempty_string(item["permission"]) &&
       slug &&
-      !item["permission"].startsWith(`kirlet.${slug}.`)
+      !item["permission"].startsWith(`kirlet.${slug}.`) &&
+      !item["permission"].startsWith(`subject.${slug}.`)
     ) {
       issues.push({
         path: `${p}.permission`,
-        message: `permission must be namespaced kirlet.${slug}.*`,
+        message: `permission must be namespaced kirlet.${slug}.* or subject.${slug}.*`,
       });
     }
     const widget: KirletManifestWidget = {

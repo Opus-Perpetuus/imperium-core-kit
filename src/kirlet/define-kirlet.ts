@@ -43,11 +43,20 @@ export type KirletDefinitionInput = {
   port?: number;
   storage_files?: boolean;
   /**
+   * App-level public realm opt-in. Absent or false ⇒ deny-by-default: the
+   * derived manifest has no `public` block even if pages/routes mark
+   * `public_access` or `public_files` is set. When true, only those explicit
+   * public pages/routes/files appear on the allowlist.
+   */
+  public?: boolean;
+  /**
    * Attachment resources to expose for public read via `GET /api/p/files/:id`.
    *
    * `resource` may be written bare (`"product"`) — it is namespaced to
    * `kirlet.<slug>.` automatically, which is also the only namespace NOX will
    * accept, so a kirlet cannot publish another's files by mistake.
+   *
+   * Ignored unless `public: true`.
    */
   public_files?: Array<{ resource: string; access?: KirletPublicAccess }>;
   /** Other kirlets that must be installed first (technical ids). */
@@ -242,7 +251,12 @@ export function define_kirlet(def: KirletDefinitionInput): KirletDefinition {
         : `kirel/${technical_id}:${version}`);
     const permissions: Array<{ id: string; label: string }> = [];
     const pages: KirletManifest["pages"] = [];
-    const public_pages: Array<{ id: string; access: KirletPublicAccess }> = [];
+    const public_pages: Array<{
+      id: string;
+      access: KirletPublicAccess;
+      segment?: string;
+      label?: string;
+    }> = [];
     const public_api: Array<{
       pathPrefix: string;
       access: KirletPublicAccess;
@@ -298,7 +312,16 @@ export function define_kirlet(def: KirletDefinitionInput): KirletDefinition {
       for (const p of mod.pages ?? []) {
         if (!p.public_access) continue;
         if (!public_pages.some((x) => x.id === p.id)) {
-          public_pages.push({ id: p.id, access: p.public_access });
+          const entry: (typeof public_pages)[number] = {
+            id: p.id,
+            access: p.public_access,
+          };
+          // `segment` vacío es el inicio del escaparate: distinguir "no lo
+          // declaró" de "lo declaró vacío" es justamente lo que evita que el
+          // anfitrión vuelva a adivinar.
+          if (p.public_segment !== undefined) entry.segment = p.public_segment;
+          if (p.public_label) entry.label = p.public_label;
+          public_pages.push(entry);
         }
       }
     }
@@ -345,7 +368,10 @@ export function define_kirlet(def: KirletDefinitionInput): KirletDefinition {
       access: entry.access ?? ("anonymous" as KirletPublicAccess),
     }));
 
-    if (public_pages.length || public_api.length || public_files.length) {
+    if (
+      def.public === true &&
+      (public_pages.length || public_api.length || public_files.length)
+    ) {
       raw.public = {};
       if (public_pages.length) raw.public.pages = public_pages;
       if (public_api.length) raw.public.api = public_api;
