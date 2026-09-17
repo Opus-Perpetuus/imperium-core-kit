@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  packages: write
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -42,6 +43,33 @@ jobs:
       # imagen: las apps lo vendorizan desde el registro. Etiquetar sin publicar
       # dejaba la version en el tag y en ningun sitio mas —npm seguia en 0.1.0
       # con el producto en 13.27.0.
+      #
+      # GitHub Packages (npm.pkg.github.com) es el registro que siempre esta:
+      # publica con el GITHUB_TOKEN del repo, en cada push a main, si esa
+      # version aun no esta. El registro lo fija el .npmrc que escribe
+      # setup-node (package.json no lleva publishConfig.registry a proposito:
+      # pisaria a --registry y todo iria al mismo sitio).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@opus-perpetuus'
+      - name: Publicar en GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          NOMBRE="$(jq -r .name package.json)"
+          REG=https://npm.pkg.github.com
+          if npm view "$NOMBRE@$VERSION" version --registry="$REG" >/dev/null 2>&1; then
+            echo "$NOMBRE@$VERSION ya esta en GitHub Packages." >> "$GITHUB_STEP_SUMMARY"
+          else
+            npm publish
+            echo "Publicada $NOMBRE@$VERSION en GitHub Packages." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          npm view "$NOMBRE" version --registry="$REG"
+
       - uses: actions/setup-node@v4
         if: env.HAY_NPM_TOKEN == 'true'
         with:
